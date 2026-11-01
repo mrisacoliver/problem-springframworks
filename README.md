@@ -42,3 +42,61 @@ With Spring Boot 3.2 and Java 21, setting `spring.threads.virtual.enabled=true` 
 Recommended Configuration in Kubernetes
 When defining resources in Kubernetes for a Spring Boot + Tomcat application, configure:
 
+Yaaml One
+Yaml Two
+
+To optimize a Spring Boot + Tomcat application on PODs with limited resources (e.g., 250m–500m CPU and 256MB–512MB RAM), you need to take action on three fronts: the JVM, Tomcat, and the Spring Framework.
+
+
+1. JVM Options (Recommended Flags)
+Pass these flags via the JAVA_TOOL_OPTIONS environment variable in your Kubernetes spec:
+
+JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70.0 -XX:+UseSerialGC -Xss256k -XX:MetaspaceSize=96m -XX:MaxMetaspaceSize=128m"
+
+XX:MaxRAMPercentage=70.0: Leaves ~30% of the POD's memory limit free for the JVM's native memory (threads, Metaspace, NIO buffers).
+
+
+-XX:+UseSerialGC: The default garbage collector (G1GC) consumes a lot of extra memory to manage threads and GC data structures. The Serial GC has an extremely small memory footprint and consumes less CPU on PODs with up to 2 vCPUs.
+
+
+-XX:Xss256k: Reduces the stack memory per thread from 1MB (Linux default) to 256KB. If your application does not use deep recursion, this saves hundreds of MBs outside the heap.
+
+
+-XX:MaxMetaspaceSize=128m: Prevents excessive class loading from exhausting the POD’s RAM.
+
+
+2. Embedded Tomcat Settings
+The default Tomcat configuration is optimized for large dedicated servers. In application.properties (or application.yml), reduce the pools to fit within the POD’s limits:
+
+
+Properties
+
+# Reduz o pool de threads do Tomcat (padrão é 200)
+server.tomcat.threads.max=20
+server.tomcat.threads.min-spare=5
+
+# Limita a fila de conexões pendentes para não acumular memória
+server.tomcat.accept-count=50
+server.tomcat.max-connections=2000
+
+# Desativa a compressão HTTP se houver Ingress/Service Mesh fazendo isso
+server.compression.enabled=false
+
+3. Spring Boot Optimizations
+Option A: Enable Virtual Threads (Java 21 + Spring Boot 3.2+)
+If you are using Java 21 and Spring Boot 3.2 or later, add the following to application.properties:
+
+spring.threads.virtual.enabled=true
+
+# Desativa auto-configurações desnecessárias se não usar JMX ou Actuator completo
+spring.jmx.enabled=false
+management.endpoints.web.exposure.exclude=*
+management.endpoints.web.exposure.include=health,prometheus
+
+4. Example Deployment Manifest
+Here is a Kubernetes manifest configured for a lean POD with 384 MB of memory:
+
+Yaml Tree
+
+
+
